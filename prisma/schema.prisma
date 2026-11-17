@@ -1,0 +1,289 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  ACCOUNTANT
+  REVIEWER
+  VIEWER
+}
+
+enum InvoiceStatus {
+  UPLOADED
+  PROCESSING
+  NEEDS_REVIEW
+  UNDER_REVIEW
+  MATCHED
+  DISCREPANCY
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+enum ReceiptStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DiscrepancyType {
+  PRICE_MISMATCH
+  QUANTITY_MISMATCH
+  TAX_MISMATCH
+  TOTAL_MISMATCH
+  DUPLICATE_INVOICE
+  MISSING_PURCHASE_ORDER
+  MISSING_RECEIPT
+  OTHER
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  country   String   @default("YE")
+  currency  String   @default("YER")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members       CompanyMember[]
+  suppliers     Supplier[]
+  invoices      Invoice[]
+  purchaseOrders PurchaseOrder[]
+  receipts      GoodsReceipt[]
+  approvals     Approval[]
+  discrepancies Discrepancy[]
+  auditLogs     AuditLog[]
+
+  @@index([name])
+}
+
+model UserProfile {
+  id        String   @id @default(cuid())
+  authId    String   @unique
+  email     String   @unique
+  fullName  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships CompanyMember[]
+  approvals  Approval[] @relation("ApprovalUser")
+  auditLogs  AuditLog[]
+
+  @@index([email])
+}
+
+model CompanyMember {
+  id        String     @id @default(cuid())
+  companyId String
+  userId    String
+  role      MemberRole @default(VIEWER)
+  createdAt DateTime   @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([userId])
+}
+
+model Supplier {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  email       String?
+  phone       String?
+  taxNumber   String?
+  address     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoices       Invoice[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([companyId, name])
+  @@index([companyId, taxNumber])
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  companyId     String
+  supplierId    String?
+  invoiceNumber String?
+  invoiceDate   DateTime?
+  dueDate       DateTime?
+  currency      String        @default("YER")
+  subtotal      Decimal       @default(0) @db.Decimal(18, 4)
+  taxAmount     Decimal       @default(0) @db.Decimal(18, 4)
+  totalAmount   Decimal       @default(0) @db.Decimal(18, 4)
+  status        InvoiceStatus @default(UPLOADED)
+  filePath      String?
+  fileName      String?
+  fileHash      String?
+  extractedData Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier      Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items         InvoiceItem[]
+  discrepancies Discrepancy[]
+  approvals     Approval[]
+
+  @@index([companyId, status, createdAt])
+  @@index([companyId, invoiceNumber])
+  @@index([companyId, supplierId])
+  @@index([companyId, fileHash])
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Decimal @default(1) @db.Decimal(18, 4)
+  unitPrice   Decimal @default(0) @db.Decimal(18, 4)
+  taxAmount   Decimal @default(0) @db.Decimal(18, 4)
+  totalAmount Decimal @default(0) @db.Decimal(18, 4)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model PurchaseOrder {
+  id          String              @id @default(cuid())
+  companyId   String
+  supplierId  String?
+  orderNumber String
+  orderDate   DateTime            @default(now())
+  currency    String              @default("YER")
+  totalAmount Decimal             @default(0) @db.Decimal(18, 4)
+  status      PurchaseOrderStatus @default(DRAFT)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  company  Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items    PurchaseOrderItem[]
+  receipts GoodsReceipt[]
+
+  @@unique([companyId, orderNumber])
+  @@index([companyId, status])
+}
+
+model PurchaseOrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  description String
+  quantity    Decimal @db.Decimal(18, 4)
+  unitPrice   Decimal @db.Decimal(18, 4)
+  totalAmount Decimal @db.Decimal(18, 4)
+
+  order PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model GoodsReceipt {
+  id          String        @id @default(cuid())
+  companyId   String
+  orderId     String?
+  receiptNumber String
+  receiptDate DateTime      @default(now())
+  status      ReceiptStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order   PurchaseOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  items   GoodsReceiptItem[]
+
+  @@unique([companyId, receiptNumber])
+  @@index([companyId, receiptDate])
+}
+
+model GoodsReceiptItem {
+  id          String  @id @default(cuid())
+  receiptId   String
+  description String
+  quantity    Decimal @db.Decimal(18, 4)
+
+  receipt GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@index([receiptId])
+}
+
+model Discrepancy {
+  id          String           @id @default(cuid())
+  companyId   String
+  invoiceId   String
+  type        DiscrepancyType
+  description String
+  expected    Decimal?         @db.Decimal(18, 4)
+  actual      Decimal?         @db.Decimal(18, 4)
+  resolved    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, resolved, createdAt])
+  @@index([invoiceId])
+}
+
+model Approval {
+  id          String         @id @default(cuid())
+  companyId   String
+  invoiceId   String
+  userId      String?
+  status      ApprovalStatus @default(PENDING)
+  note        String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoice Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  user    UserProfile? @relation("ApprovalUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+  @@index([invoiceId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    UserProfile? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([entity, entityId])
+}

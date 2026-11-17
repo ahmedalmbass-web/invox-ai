@@ -64,6 +64,7 @@ model Company {
   id        String   @id @default(cuid())
   name      String
   country   String   @default("YE")
+industry String @default("other")
   currency  String   @default("YER")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

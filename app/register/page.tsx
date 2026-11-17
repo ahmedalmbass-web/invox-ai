@@ -2,6 +2,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -14,6 +15,8 @@ import {
 } from "lucide-react";
 
 export default function RegisterPage() {
+  const router = useRouter();
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -47,6 +50,7 @@ export default function RegisterPage() {
           email: email.trim(),
           password,
           options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
             data: {
               full_name: name.trim(),
             },
@@ -59,12 +63,14 @@ export default function RegisterPage() {
       }
 
       if (data.session) {
-        setSuccess("تم إنشاء الحساب بنجاح. يمكنك الآن تسجيل الدخول.");
-      } else {
-        setSuccess(
-          "تم إرسال رسالة تأكيد إلى بريدك الإلكتروني. افتح الرسالة وأكّد حسابك."
-        );
+        router.push("/setup-company");
+        router.refresh();
+        return;
       }
+
+      setSuccess(
+        "تم إنشاء الحساب. افتح رسالة التأكيد التي أرسلناها إلى بريدك الإلكتروني، ثم أكّد حسابك."
+      );
     } catch {
       setError("حدث خطأ أثناء إنشاء الحساب. حاول مرة أخرى.");
     } finally {
